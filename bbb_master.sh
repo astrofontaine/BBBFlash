@@ -8,8 +8,9 @@
 #   --host   SSH host alias or user@host (default: bbb)
 #   --test   After syncing, run each script and verify it produces an output file
 #   --run    After syncing, run a single script by short name. Available names:
-#              sysinfo    - collect CPU, memory, disk, network, OS details
-#              bluetooth  - detect and report Bluetooth hardware
+#              sysinfo      - collect CPU, memory, disk, network, OS details
+#              bluetooth    - detect and report Bluetooth hardware
+#              capabilities - GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux
 #   --quiet  Suppress [INFO] log lines (errors and test results still shown)
 
 set -euo pipefail
@@ -27,6 +28,7 @@ QUIET=0
 SCRIPTS=(
     "sysinfo:bbb_sysinfo.sh"
     "bluetooth:bbb_bluetooth.sh"
+    "capabilities:bbb_capabilities.sh"
 )
 
 usage() {
