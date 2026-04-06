@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Detects and reports Bluetooth hardware details on a BeagleBone Black.
-# Output is written to /tmp/bbb_bluetooth_<timestamp>.txt
+# Output is written to /home/debian/bbb_bluetooth_<timestamp>.txt
 
 set -euo pipefail
 
-OUTFILE="/tmp/bbb_bluetooth_$(date +%Y%m%d_%H%M%S).txt"
+OUTFILE="/home/debian/bbb_bluetooth_$(date +%Y%m%d_%H%M%S).txt"
+
+log()  { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
 section() {
     printf '\n==================================================\n' >> "$OUTFILE"
@@ -13,9 +15,14 @@ section() {
 }
 
 run() {
+    log "Running: $1"
     section "$1"
     eval "$2" >> "$OUTFILE" 2>&1 || true
+    log "Done:    $1"
 }
+
+log "Starting Bluetooth detection"
+log "Output file: $OUTFILE"
 
 : > "$OUTFILE"
 
@@ -35,5 +42,5 @@ run "LOADED BT FIRMWARE"           "ls /lib/firmware/ti-connectivity/ 2>/dev/nul
 run "BLUETOOTHCTL INFO"            "timeout 5 bluetoothctl show 2>/dev/null || echo 'bluetoothctl not available or timed out'"
 run "SERVICE STATUS"               "systemctl status bluetooth.service 2>/dev/null || echo 'systemctl not available'"
 
-printf '\n[INFO] Report written to: %s\n' "$OUTFILE"
+log "Detection complete. Report written to: $OUTFILE"
 printf '%s\n' "$OUTFILE"
