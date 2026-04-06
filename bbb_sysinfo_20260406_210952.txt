@@ -1,0 +1,96 @@
+BBB System Info Report
+Generated: 2026-04-06T21:09:52+00:00
+Hostname:  beaglebone
+
+==================================================
+CPU INFO (lscpu)
+==================================================
+Architecture:        armv7l
+Byte Order:          Little Endian
+CPU(s):              1
+On-line CPU(s) list: 0
+Thread(s) per core:  1
+Core(s) per socket:  1
+Socket(s):           1
+Vendor ID:           ARM
+Model:               2
+Model name:          Cortex-A8
+Stepping:            r3p2
+CPU max MHz:         1000.0000
+CPU min MHz:         300.0000
+BogoMIPS:            995.32
+Flags:               half thumb fastmult vfp edsp thumbee neon vfpv3 tls vfpd32
+
+==================================================
+MEMORY (free -h)
+==================================================
+              total        used        free      shared  buff/cache   available
+Mem:          483Mi        44Mi       367Mi       1.0Mi        71Mi       426Mi
+Swap:            0B          0B          0B
+
+==================================================
+DISK USAGE (df -h)
+==================================================
+Filesystem      Size  Used Avail Use% Mounted on
+udev            215M     0  215M   0% /dev
+tmpfs            49M  1.6M   47M   4% /run
+/dev/mmcblk1p1  3.5G  1.9G  1.5G  56% /
+tmpfs           242M     0  242M   0% /dev/shm
+tmpfs           5.0M  4.0K  5.0M   1% /run/lock
+tmpfs           242M     0  242M   0% /sys/fs/cgroup
+tmpfs            49M     0   49M   0% /run/user/1000
+
+==================================================
+NETWORK (ip address)
+==================================================
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: can0: <NOARP,ECHO> mtu 16 qdisc noop state DOWN group default qlen 10
+    link/can 
+3: can1: <NOARP,ECHO> mtu 16 qdisc noop state DOWN group default qlen 10
+    link/can 
+4: eth0: <BROADCAST,MULTICAST,DYNAMIC,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 02:11:22:33:44:55 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.2.12/24 brd 192.168.2.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fd77:9d4d:ae3f:49ab:11:22ff:fe33:4455/64 scope global dynamic mngtmpaddr 
+       valid_lft 2591975sec preferred_lft 604775sec
+    inet6 fe80::11:22ff:fe33:4455/64 scope link 
+       valid_lft forever preferred_lft forever
+5: usb0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 64:33:db:2e:11:c4 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.7.2/24 brd 192.168.7.255 scope global usb0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::6633:dbff:fe2e:11c4/64 scope link 
+       valid_lft forever preferred_lft forever
+6: usb1: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc pfifo_fast state DOWN group default qlen 1000
+    link/ether 64:33:db:2e:11:c8 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.6.2/24 brd 192.168.6.255 scope global usb1
+       valid_lft forever preferred_lft forever
+
+==================================================
+OS RELEASE
+==================================================
+PRETTY_NAME="Debian GNU/Linux 10 (buster)"
+NAME="Debian GNU/Linux"
+VERSION_ID="10"
+VERSION="10 (buster)"
+VERSION_CODENAME=buster
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+
+==================================================
+KERNEL
+==================================================
+Linux beaglebone 4.19.94-ti-r42 #1buster SMP PREEMPT Tue Mar 31 19:38:29 UTC 2020 armv7l GNU/Linux
+
+==================================================
+UPTIME
+==================================================
+ 21:09:52 up  1:06,  1 user,  load average: 0.00, 0.00, 0.00
