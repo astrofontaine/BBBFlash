@@ -25,14 +25,16 @@ RUN_TARGET=""
 QUIET=0
 BBB_SUDO_PASS="${BBB_SUDO_PASS:-}"
 
-# All managed scripts, in the order they should be synced.
-# Format: "shortname:filename:needs_sudo"
+# All managed scripts.
+# Format: "shortname|filename|sudo_flag|description"
 SCRIPTS=(
-    "sysinfo:bbb_sysinfo.sh:no"
-    "bluetooth:bbb_bluetooth.sh:no"
-    "capabilities:bbb_capabilities.sh:no"
-    "filesystem:bbb_filesystem.sh:sudo"
+    "sysinfo|bbb_sysinfo.sh|no|Collects CPU, memory, disk, network, kernel, and uptime"
+    "bluetooth|bbb_bluetooth.sh|no|Detects Bluetooth hardware, firmware, HCI devices, and service state"
+    "capabilities|bbb_capabilities.sh|no|Inventories GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux, and cape EEPROMs"
+    "filesystem|bbb_filesystem.sh|sudo|Full file inventory categorised by purpose; reports setuid, world-writable, and largest files"
 )
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 usage() {
     awk 'NR==1 && /^#!/ { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
@@ -43,11 +45,34 @@ log()  { [[ $QUIET -eq 0 ]] && printf '[%s] [INFO] %s\n' "$(date +%H:%M:%S)" "$*
 pass() { printf '[%s] [PASS] %s\n' "$(date +%H:%M:%S)" "$*"; }
 fail() { printf '[%s] [FAIL] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 
+# Print metadata for a script entry (size, last commit, sudo, description).
+script_info() {
+    local entry="$1"
+    local file desc sudo_flag src size last_updated
+    file="$(printf '%s' "$entry"  | cut -d'|' -f2)"
+    sudo_flag="$(printf '%s' "$entry" | cut -d'|' -f3)"
+    desc="$(printf '%s' "$entry"  | cut -d'|' -f4)"
+    src="$SCRIPT_DIR/$file"
+
+    if [[ -f "$src" ]]; then
+        size="$(du -sh "$src" 2>/dev/null | cut -f1)"
+        last_updated="$(git -C "$SCRIPT_DIR" log --format="%ad" \
+                            --date=format:"%Y-%m-%d %H:%M" -1 -- "$file" 2>/dev/null \
+                        || stat -c "%y" "$src" 2>/dev/null | cut -d. -f1)"
+    else
+        size="unknown"
+        last_updated="unknown"
+    fi
+
+    log "    Description:  $desc"
+    log "    Size:         $size   Last updated: $last_updated"
+    log "    Sudo:         $sudo_flag"
+}
+
 resolve_entry() {
     local name="$1"
     for entry in "${SCRIPTS[@]}"; do
-        local short="${entry%%:*}"
-        if [[ "$short" == "$name" ]]; then
+        if [[ "${entry%%|*}" == "$name" ]]; then
             printf '%s\n' "$entry"
             return 0
         fi
@@ -55,8 +80,12 @@ resolve_entry() {
     fail "Unknown script name: '$name'"
     printf 'Available names:\n' >&2
     for entry in "${SCRIPTS[@]}"; do
-        printf '  %-14s %s\n' "${entry%%:*}" \
-            "$(printf '%s' "$entry" | cut -d: -f3 | grep -q sudo && echo '(requires sudo)' || true)" >&2
+        local short file desc sudo_flag
+        short="$(printf '%s' "$entry" | cut -d'|' -f1)"
+        desc="$(printf '%s' "$entry"  | cut -d'|' -f4)"
+        sudo_flag="$(printf '%s' "$entry" | cut -d'|' -f3)"
+        printf '  %-14s %s%s\n' "$short" "$desc" \
+            "$([[ "$sudo_flag" == "sudo" ]] && echo ' (requires sudo)' || true)" >&2
     done
     exit 1
 }
@@ -79,8 +108,7 @@ prompt_sudo() {
 }
 
 # Run a script on the BBB, streaming output live.
-# Writes the remote output file path to OUTFILE_PATH (global).
-# Usage: ssh_run <script_filename> <needs_sudo>
+# Sets global OUTFILE_PATH to the remote output file path.
 OUTFILE_PATH=""
 ssh_run() {
     local script="$1"
@@ -115,7 +143,8 @@ fetch_output() {
     log "Saved to: ${LOCAL_OUTPUT_DIR}/${filename}"
 }
 
-# Parse args
+# ── Parse args ───────────────────────────────────────────────────────────────
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --host)  [[ $# -lt 2 ]] && { fail "--host requires a value"; exit 1; }
@@ -138,13 +167,14 @@ ssh -q "$BBB_HOST" "mkdir -p '$BBB_SCRIPT_DIR'"
 log "Syncing ${#SCRIPTS[@]} script(s) to ${BBB_HOST}:${BBB_SCRIPT_DIR}/"
 
 for entry in "${SCRIPTS[@]}"; do
-    script="$(printf '%s' "$entry" | cut -d: -f2)"
+    script="$(printf '%s' "$entry" | cut -d'|' -f2)"
     src="$SCRIPT_DIR/$script"
     if [[ ! -f "$src" ]]; then
         fail "Script not found locally: $src"
         exit 1
     fi
     log "  Copying: $script"
+    script_info "$entry"
     scp -q "$src" "${BBB_HOST}:${BBB_SCRIPT_DIR}/${script}"
     ssh -q "$BBB_HOST" "chmod +x '${BBB_SCRIPT_DIR}/${script}'"
     log "  Ready:   $script"
@@ -158,11 +188,12 @@ log "Sync complete."
 
 if [[ -n "$RUN_TARGET" ]]; then
     entry="$(resolve_entry "$RUN_TARGET")"
-    script="$(printf '%s' "$entry" | cut -d: -f2)"
-    needs_sudo="$(printf '%s' "$entry" | cut -d: -f3)"
+    script="$(printf '%s' "$entry" | cut -d'|' -f2)"
+    needs_sudo="$(printf '%s' "$entry" | cut -d'|' -f3)"
     [[ "$needs_sudo" == "sudo" ]] && prompt_sudo
     printf '\n'
     log "── Running: $script on $BBB_HOST"
+    script_info "$entry"
     ssh_run "$script" "$needs_sudo"
     rc=$?
     if [[ $rc -eq 0 && -n "$OUTFILE_PATH" ]]; then
@@ -180,11 +211,12 @@ PASS=0
 FAIL=0
 
 for entry in "${SCRIPTS[@]}"; do
-    script="$(printf '%s' "$entry" | cut -d: -f2)"
-    needs_sudo="$(printf '%s' "$entry" | cut -d: -f3)"
+    script="$(printf '%s' "$entry" | cut -d'|' -f2)"
+    needs_sudo="$(printf '%s' "$entry" | cut -d'|' -f3)"
     [[ "$needs_sudo" == "sudo" ]] && prompt_sudo
     printf '\n'
     log "── Testing: $script"
+    script_info "$entry"
     log "Executing on $BBB_HOST..."
 
     ssh_run "$script" "$needs_sudo"
