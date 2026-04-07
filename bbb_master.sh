@@ -11,6 +11,7 @@
 #              sysinfo      - collect CPU, memory, disk, network, OS details
 #              bluetooth    - detect and report Bluetooth hardware
 #              capabilities - GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux
+#              filesystem   - full file inventory by category (requires sudo)
 #   --quiet  Suppress [INFO] log lines (errors and test results still shown)
 
 set -euo pipefail
@@ -22,17 +23,18 @@ BBB_SCRIPT_DIR="/home/debian/bbbflash"
 RUN_TEST=0
 RUN_TARGET=""
 QUIET=0
+BBB_SUDO_PASS="${BBB_SUDO_PASS:-}"
 
 # All managed scripts, in the order they should be synced.
-# Format: "shortname:filename"
+# Format: "shortname:filename:needs_sudo"
 SCRIPTS=(
-    "sysinfo:bbb_sysinfo.sh"
-    "bluetooth:bbb_bluetooth.sh"
-    "capabilities:bbb_capabilities.sh"
+    "sysinfo:bbb_sysinfo.sh:no"
+    "bluetooth:bbb_bluetooth.sh:no"
+    "capabilities:bbb_capabilities.sh:no"
+    "filesystem:bbb_filesystem.sh:sudo"
 )
 
 usage() {
-    # Print the leading comment block (stops at first non-comment line).
     awk 'NR==1 && /^#!/ { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
     exit 0
 }
@@ -41,22 +43,66 @@ log()  { [[ $QUIET -eq 0 ]] && printf '[%s] [INFO] %s\n' "$(date +%H:%M:%S)" "$*
 pass() { printf '[%s] [PASS] %s\n' "$(date +%H:%M:%S)" "$*"; }
 fail() { printf '[%s] [FAIL] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 
-resolve_script() {
+resolve_entry() {
     local name="$1"
     for entry in "${SCRIPTS[@]}"; do
         local short="${entry%%:*}"
-        local file="${entry##*:}"
         if [[ "$short" == "$name" ]]; then
-            printf '%s\n' "$file"
+            printf '%s\n' "$entry"
             return 0
         fi
     done
     fail "Unknown script name: '$name'"
     printf 'Available names:\n' >&2
     for entry in "${SCRIPTS[@]}"; do
-        printf '  %s\n' "${entry%%:*}" >&2
+        printf '  %-14s %s\n' "${entry%%:*}" \
+            "$(printf '%s' "$entry" | cut -d: -f3 | grep -q sudo && echo '(requires sudo)' || true)" >&2
     done
     exit 1
+}
+
+# Prompt for BBB sudo password once; cached for the session.
+# Must be called outside any subshell so BBB_SUDO_PASS propagates.
+prompt_sudo() {
+    if [[ -n "$BBB_SUDO_PASS" ]]; then return; fi
+    log "Script requires sudo on the BBB."
+    if [[ -t 0 ]]; then
+        read -r -s -p "         Enter sudo password for BBB: " BBB_SUDO_PASS
+        printf '\n'
+    else
+        read -r BBB_SUDO_PASS || true
+    fi
+    if [[ -z "$BBB_SUDO_PASS" ]]; then
+        fail "No sudo password provided."
+        exit 1
+    fi
+}
+
+# Run a script on the BBB, streaming output live.
+# Writes the remote output file path to OUTFILE_PATH (global).
+# Usage: ssh_run <script_filename> <needs_sudo>
+OUTFILE_PATH=""
+ssh_run() {
+    local script="$1"
+    local needs_sudo="$2"
+    local remote_script="${BBB_SCRIPT_DIR}/${script}"
+    local tmp_out
+    tmp_out="$(mktemp)"
+
+    if [[ "$needs_sudo" == "sudo" ]]; then
+        # Pass password as first stdin line; remote shell reads it into SUDO_PASS.
+        printf '%s\n' "$BBB_SUDO_PASS" \
+            | ssh -q "$BBB_HOST" \
+                "read -rs SUDO_PASS && export SUDO_PASS && bash '$remote_script'" \
+                2>&1 | tee "$tmp_out"
+    else
+        ssh -q "$BBB_HOST" "bash '$remote_script'" 2>&1 | tee "$tmp_out"
+    fi
+
+    local exit_code=${PIPESTATUS[0]}
+    OUTFILE_PATH="$(tail -n1 "$tmp_out")"
+    rm -f "$tmp_out"
+    return $exit_code
 }
 
 fetch_output() {
@@ -92,7 +138,7 @@ ssh -q "$BBB_HOST" "mkdir -p '$BBB_SCRIPT_DIR'"
 log "Syncing ${#SCRIPTS[@]} script(s) to ${BBB_HOST}:${BBB_SCRIPT_DIR}/"
 
 for entry in "${SCRIPTS[@]}"; do
-    script="${entry##*:}"
+    script="$(printf '%s' "$entry" | cut -d: -f2)"
     src="$SCRIPT_DIR/$script"
     if [[ ! -f "$src" ]]; then
         fail "Script not found locally: $src"
@@ -110,28 +156,19 @@ log "Sync complete."
 
 # ── RUN ──────────────────────────────────────────────────────────────────────
 
-run_script() {
-    local script="$1"
-    local remote_script="${BBB_SCRIPT_DIR}/${script}"
-    local tmp_out
-    tmp_out="$(mktemp)"
+if [[ -n "$RUN_TARGET" ]]; then
+    entry="$(resolve_entry "$RUN_TARGET")"
+    script="$(printf '%s' "$entry" | cut -d: -f2)"
+    needs_sudo="$(printf '%s' "$entry" | cut -d: -f3)"
+    [[ "$needs_sudo" == "sudo" ]] && prompt_sudo
     printf '\n'
     log "── Running: $script on $BBB_HOST"
-    ssh -q "$BBB_HOST" "bash '$remote_script'" 2>&1 | tee "$tmp_out"
-    local exit_code=${PIPESTATUS[0]}
-    local outfile
-    outfile="$(tail -n1 "$tmp_out")"
-    rm -f "$tmp_out"
-    if [[ $exit_code -eq 0 && -n "$outfile" ]]; then
-        fetch_output "$outfile"
+    ssh_run "$script" "$needs_sudo"
+    rc=$?
+    if [[ $rc -eq 0 && -n "$OUTFILE_PATH" ]]; then
+        fetch_output "$OUTFILE_PATH"
     fi
-    return $exit_code
-}
-
-if [[ -n "$RUN_TARGET" ]]; then
-    script="$(resolve_script "$RUN_TARGET")"
-    run_script "$script"
-    exit $?
+    exit $rc
 fi
 
 # ── TEST ─────────────────────────────────────────────────────────────────────
@@ -143,44 +180,37 @@ PASS=0
 FAIL=0
 
 for entry in "${SCRIPTS[@]}"; do
-    script="${entry##*:}"
-    remote_script="${BBB_SCRIPT_DIR}/${script}"
+    script="$(printf '%s' "$entry" | cut -d: -f2)"
+    needs_sudo="$(printf '%s' "$entry" | cut -d: -f3)"
+    [[ "$needs_sudo" == "sudo" ]] && prompt_sudo
     printf '\n'
     log "── Testing: $script"
-
-    # (1) Run the script, streaming output live; capture to temp file for path extraction.
-    tmp_out="$(mktemp)"
     log "Executing on $BBB_HOST..."
-    ssh -q "$BBB_HOST" "bash '$remote_script'" 2>&1 | tee "$tmp_out"
-    exit_code=${PIPESTATUS[0]}
+
+    ssh_run "$script" "$needs_sudo"
+    exit_code=$?
 
     if [[ $exit_code -ne 0 ]]; then
         fail "Script exited with code $exit_code"
-        rm -f "$tmp_out"
         FAIL=$((FAIL + 1))
         continue
     fi
     pass "Script executed (exit 0)"
 
-    # (2) Did it produce an output file?
-    # Scripts print the output path as the last line of stdout.
-    outfile="$(tail -n1 "$tmp_out")"
-    rm -f "$tmp_out"
-
-    if [[ -z "$outfile" ]]; then
+    if [[ -z "$OUTFILE_PATH" ]]; then
         fail "Could not determine output file path from script output"
         FAIL=$((FAIL + 1))
         continue
     fi
 
-    log "Verifying output file: $outfile"
-    file_exists="$(ssh -q "$BBB_HOST" "[[ -s '$outfile' ]] && echo yes || echo no")"
+    log "Verifying output file: $OUTFILE_PATH"
+    file_exists="$(ssh -q "$BBB_HOST" "[[ -s '$OUTFILE_PATH' ]] && echo yes || echo no")"
     if [[ "$file_exists" == "yes" ]]; then
-        pass "Output file exists and is non-empty: $outfile"
-        fetch_output "$outfile"
+        pass "Output file exists and is non-empty: $OUTFILE_PATH"
+        fetch_output "$OUTFILE_PATH"
         PASS=$((PASS + 1))
     else
-        fail "Output file missing or empty: $outfile"
+        fail "Output file missing or empty: $OUTFILE_PATH"
         FAIL=$((FAIL + 1))
     fi
 done
