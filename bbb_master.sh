@@ -12,6 +12,7 @@
 #              bluetooth    - detect and report Bluetooth hardware
 #              capabilities - GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux
 #              filesystem   - full file inventory by category (requires sudo)
+#              network      - interfaces, sockets, sessions with DNS, process map (requires sudo)
 #   --quiet  Suppress [INFO] log lines (errors and test results still shown)
 
 set -euo pipefail
@@ -28,10 +29,11 @@ BBB_SUDO_PASS="${BBB_SUDO_PASS:-}"
 # All managed scripts.
 # Format: "shortname|filename|sudo_flag|description"
 SCRIPTS=(
-    "sysinfo|bbb_sysinfo.sh|no|Collects CPU, memory, disk, network, kernel, and uptime"
-    "bluetooth|bbb_bluetooth.sh|no|Detects Bluetooth hardware, firmware, HCI devices, and service state"
-    "capabilities|bbb_capabilities.sh|no|Inventories GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux, and cape EEPROMs"
+    "sysinfo|bbb_sysinfo.sh|sudo|Collects CPU, memory, disk, network, kernel, and uptime"
+    "bluetooth|bbb_bluetooth.sh|sudo|Detects Bluetooth hardware, firmware, HCI devices, and service state"
+    "capabilities|bbb_capabilities.sh|sudo|Inventories GPIO, I2C, SPI, PWM, ADC, UART, CAN, pinmux, and cape EEPROMs"
     "filesystem|bbb_filesystem.sh|sudo|Full file inventory categorised by purpose; reports setuid, world-writable, and largest files"
+    "network|bbb_network.sh|sudo|Collects network state: interfaces, capabilities, TCP/UDP/Unix sockets, reverse-DNS session table, process-socket map, conntrack, and logs"
 )
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
